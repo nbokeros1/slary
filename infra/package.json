@@ -1,0 +1,13 @@
+{
+  "name": "@slary/infra",
+  "version": "1.0.0",
+  "private": true,
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@slary/functions": "*",
+    "@supabase/supabase-js": "^2.106.2"
+  }
+}

@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@slary/functions": ["../functions/src/index.ts"],
+      "@slary/infra":     ["../infra/src/index.ts"]
     }
   },
   "include": [
