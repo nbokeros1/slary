@@ -84,3 +84,11 @@ $$;
 create trigger profiles_updated_at
   before update on profiles
   for each row execute function touch_updated_at();
+
+-- ── Grants explicites (requis depuis mai 2026 sur nouveaux projets) ──
+-- Donne accès à PostgREST / supabase-js via le rôle anon et authenticated
+grant usage on schema public to anon, authenticated;
+
+grant select, insert, update, delete on public.profiles to authenticated;
+grant select, insert, update, delete on public.shifts   to authenticated;
+grant select, insert, update, delete on public.entries  to authenticated;
