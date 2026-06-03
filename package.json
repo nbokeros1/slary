@@ -1,11 +1,18 @@
 {
   "name": "slary",
   "private": true,
-  "workspaces": ["ui", "functions", "infra"],
+  "workspaces": [
+    "ui",
+    "functions",
+    "infra"
+  ],
   "scripts": {
-    "dev":   "npm run dev   --workspace=ui",
+    "dev": "npm run dev   --workspace=ui",
     "build": "npm run build --workspace=ui",
     "start": "npm run start --workspace=ui",
-    "lint":  "npm run lint  --workspace=ui"
+    "lint": "npm run lint  --workspace=ui"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
   }
 }

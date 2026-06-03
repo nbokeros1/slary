@@ -5,7 +5,7 @@ import {
   REGIONS, CA_TAX, US_TAX,
   calcTax, estimateAnnualTax, getCategories, getChecklist,
   fmtCurrency, fmtShort, DEFAULT_PROFILE,
-  type Profile, type ShiftData, type EntryData,
+  type Profile, type ShiftData, type EntryData, type YtdData,
   type Country, type WorkerType, type TipsMode,
 } from '@slary/functions'
 import { supabase, type User } from '@slary/infra'
@@ -201,6 +201,16 @@ export default function DashboardPage() {
   const [pmRegion,  setPmRegion]      = useState('QC')
   const [pmWorker,  setPmWorker]      = useState<WorkerType>('employee')
 
+  // ── YTD Rattrapage ────────────────────────────────────────────────────────
+  const [ytdData,          setYtdData]          = useState<YtdData | null>(null)
+  const [ytdModal,         setYtdModal]         = useState(false)
+  const [ytdGrossInput,    setYtdGrossInput]    = useState('')
+  const [ytdTaxInput,      setYtdTaxInput]      = useState('')
+  const [ytdHoursInput,    setYtdHoursInput]    = useState('')
+  const [ytdRevenueInput,  setYtdRevenueInput]  = useState('')
+  const [ytdInstalInput,   setYtdInstalInput]   = useState('')
+  const [ytdPeriod,        setYtdPeriod]        = useState('Jan–Mai 2026')
+
   // ── Auth / Sync ────────────────────────────────────────────────────────────
   const [user,      setUser]          = useState<User | null>(null)
   const [authModal, setAuthModal]     = useState(false)
@@ -230,6 +240,16 @@ export default function DashboardPage() {
     setObWorker(p.workerType); setObSector(p.sector)
     if (p.savedRate) setRate(String(p.savedRate))
     setPmCountry(p.country); setPmRegion(p.region); setPmWorker(p.workerType)
+    const y = load<YtdData | null>('slary_ytd', null)
+    if (y) {
+      setYtdData(y)
+      setYtdGrossInput(String(y.grossYtd || ''))
+      setYtdTaxInput(String(y.taxWithheldYtd || ''))
+      setYtdHoursInput(String(y.hoursYtd || ''))
+      setYtdRevenueInput(String(y.revenueYtd || ''))
+      setYtdInstalInput(String(y.instalmentsYtd || ''))
+      setYtdPeriod(y.period)
+    }
     setReady(true)
     if (localStorage.getItem('slary_profile')) setPhase('app')
   }, [])
@@ -301,10 +321,14 @@ export default function DashboardPage() {
   const monthTax   = sum(monthShifts, 'totalTax')
   const monthTips  = monthShifts.reduce((a, s) => a + (s.tipsAmt || 0), 0)
 
-  const annGross   = sum(shifts, 'gross')
+  const isAutonomous = profile.workerType === 'autonomous' || profile.workerType === 'gig'
+  const ytdGross   = ytdData ? (isAutonomous ? ytdData.revenueYtd : ytdData.grossYtd) : 0
+  const ytdTaxPaid = ytdData ? (isAutonomous ? ytdData.instalmentsYtd : ytdData.taxWithheldYtd) : 0
+
+  const annGross   = sum(shifts, 'gross') + ytdGross
   const annNet     = sum(shifts, 'net')
-  const annTax     = sum(shifts, 'totalTax')
-  const annHours   = sum(shifts, 'hours')
+  const annTax     = sum(shifts, 'totalTax') + ytdTaxPaid
+  const annHours   = sum(shifts, 'hours') + (ytdData?.hoursYtd ?? 0)
   const annTips    = shifts.reduce((a, s) => a + (s.tipsAmt || 0), 0)
 
   const incomeKeys   = ['income_emp', 'income_self', 'income_gov', 'income_w2', 'income_1099']
@@ -461,6 +485,26 @@ export default function DashboardPage() {
     setShifts(next); save('slary_shifts', next)
     if (user) void dbDeleteShift(user.id, ts)
     toast('🗑 Quart supprimé')
+  }
+
+  function saveYtd() {
+    const ytd: YtdData = {
+      grossYtd:       isAutonomous ? 0 : (parseFloat(ytdGrossInput)   || 0),
+      taxWithheldYtd: isAutonomous ? 0 : (parseFloat(ytdTaxInput)     || 0),
+      hoursYtd:       parseFloat(ytdHoursInput)   || 0,
+      revenueYtd:     isAutonomous ? (parseFloat(ytdRevenueInput) || 0) : 0,
+      instalmentsYtd: isAutonomous ? (parseFloat(ytdInstalInput)  || 0) : 0,
+      period:         ytdPeriod,
+      ts:             Date.now(),
+    }
+    setYtdData(ytd); save('slary_ytd', ytd)
+    setYtdModal(false)
+    toast('✓ Revenus passés enregistrés !')
+  }
+
+  function clearYtd() {
+    setYtdData(null); save('slary_ytd', null)
+    toast('🗑 Revenus passés supprimés')
   }
 
   function clearData() {
@@ -848,6 +892,32 @@ export default function DashboardPage() {
         {tab === 'decl' && (
           <div className="flex flex-col gap-3.5 p-5 pb-28 animate-fade-up">
 
+            {/* Bannière YTD rattrapage */}
+            {!ytdData ? (
+              <button onClick={() => setYtdModal(true)}
+                className="flex items-center gap-3 bg-[rgba(255,181,71,0.08)] border border-[rgba(255,181,71,0.25)] rounded-xl px-4 py-3.5 cursor-pointer hover:bg-[rgba(255,181,71,0.13)] transition-all text-left w-full">
+                <span className="text-[22px] flex-shrink-0">📥</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-black text-[#FFB547]">Revenus avant Slary ?</div>
+                  <div className="text-[11px] text-[rgba(232,230,224,0.38)] mt-0.5">Ajoute tes salaires passés pour un calcul annuel précis</div>
+                </div>
+                <span className="text-[#FFB547] font-black text-[12px] flex-shrink-0">Ajouter →</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-3 bg-[rgba(62,255,200,0.06)] border border-[rgba(62,255,200,0.2)] rounded-xl px-4 py-3 text-left">
+                <span className="text-[18px] flex-shrink-0">✓</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12px] font-black text-[#3EFFC8]">Revenus passés inclus · {ytdData.period}</div>
+                  <div className="text-[11px] text-[rgba(232,230,224,0.38)] mt-0.5">
+                    {isAutonomous
+                      ? `${fmt(ytdData.revenueYtd)} revenus · ${fmt(ytdData.instalmentsYtd)} acomptes`
+                      : `${fmt(ytdData.grossYtd)} brut · ${fmt(ytdData.taxWithheldYtd)} retenus`}
+                  </div>
+                </div>
+                <button onClick={() => setYtdModal(true)} className="text-[11px] font-black text-[rgba(232,230,224,0.38)] hover:text-[#E8E6E0] cursor-pointer transition-colors flex-shrink-0">Modifier</button>
+              </div>
+            )}
+
             {/* Annual hero */}
             <div className="bg-gradient-to-br from-[#1C2028] to-[#232830] border border-[rgba(255,255,255,0.07)] rounded-2xl p-6 relative overflow-hidden">
               <div className="absolute top-[-40px] right-[-40px] w-40 h-40 rounded-full pointer-events-none"
@@ -957,7 +1027,29 @@ export default function DashboardPage() {
                 <StatBox label="Total tips"   value={fmtShort(annTips)}  color="teal" />
               </div>
 
-              {shifts.length === 0
+              {/* Entrée YTD importée */}
+              {ytdData && (
+                <div className="bg-[#1C2028] border border-[rgba(255,181,71,0.2)] rounded-2xl overflow-hidden">
+                  <div className="px-4 py-3 bg-[rgba(255,181,71,0.05)] flex justify-between items-center">
+                    <div>
+                      <span className="text-[13px] font-black text-[#FFB547]">📥 Revenus importés</span>
+                      <span className="ml-2 font-mono text-[10px] text-[rgba(232,230,224,0.38)]">{ytdData.period}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-mono text-[12px] text-[#FFB547]">{fmt(ytdGross)} brut</div>
+                      <div className="font-mono text-[10px] text-[rgba(232,230,224,0.38)]">{fmt(ytdTaxPaid)} {isAutonomous ? 'acomptes' : 'retenus'}</div>
+                    </div>
+                  </div>
+                  <div className="px-4 py-3 flex justify-between items-center">
+                    <span className="text-[12px] text-[rgba(232,230,224,0.38)]">
+                      {isAutonomous ? 'Revenus clients avant Slary' : 'Salaires avant Slary · bulletin de paie'}
+                    </span>
+                    <button onClick={clearYtd} className="text-[11px] font-semibold text-[rgba(232,230,224,0.38)] hover:text-[#FF5C5C] transition-colors cursor-pointer">Supprimer</button>
+                  </div>
+                </div>
+              )}
+
+              {shifts.length === 0 && !ytdData
                 ? (
                   <div className="bg-[#1C2028] border border-[rgba(255,255,255,0.07)] rounded-2xl p-8 text-center">
                     <p className="font-serif italic text-[15px] text-[rgba(232,230,224,0.38)]">Aucun quart enregistré.</p>
@@ -1164,6 +1256,74 @@ export default function DashboardPage() {
           ))}
         </div>
       </nav>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          MODAL: YTD RATTRAPAGE
+      ═══════════════════════════════════════════════════════════════════ */}
+      <BottomSheet
+        open={ytdModal}
+        onClose={() => setYtdModal(false)}
+        title="Revenus avant Slary"
+        subtitle={isAutonomous ? 'Revenus clients reçus · acomptes déjà versés' : 'Depuis ton bulletin de paie · cumul annuel (YTD)'}>
+        <div className="flex flex-col gap-3.5">
+
+          <Field label="Période couverte">
+            <input
+              type="text"
+              value={ytdPeriod}
+              onChange={e => setYtdPeriod(e.target.value)}
+              placeholder="Ex : Jan–Mai 2026"
+              className={INPUT}
+            />
+          </Field>
+
+          {isAutonomous ? (
+            <>
+              <div className="bg-[rgba(255,181,71,0.08)] border border-[rgba(255,181,71,0.2)] rounded-lg px-3.5 py-2.5 text-[12px] text-[#FFB547] leading-[1.6]">
+                ℹ️ Entre le total des paiements reçus de tes clients (pas tes factures envoyées — ce que tu as <strong>encaissé</strong>).
+              </div>
+              <Field label="Revenus encaissés ($)">
+                <input type="number" value={ytdRevenueInput} onChange={e => setYtdRevenueInput(e.target.value)}
+                  placeholder="0.00" step="0.01" min="0" className={INPUT} />
+              </Field>
+              <Field label="Acomptes provisionnels déjà payés à l'ARC / IRS ($)">
+                <input type="number" value={ytdInstalInput} onChange={e => setYtdInstalInput(e.target.value)}
+                  placeholder="0.00" step="0.01" min="0" className={INPUT} />
+              </Field>
+              <Field label="Heures travaillées (optionnel)">
+                <input type="number" value={ytdHoursInput} onChange={e => setYtdHoursInput(e.target.value)}
+                  placeholder="0" min="0" className={INPUT} />
+              </Field>
+            </>
+          ) : (
+            <>
+              <div className="bg-[rgba(255,181,71,0.08)] border border-[rgba(255,181,71,0.2)] rounded-lg px-3.5 py-2.5 text-[12px] text-[#FFB547] leading-[1.6]">
+                ℹ️ Trouve ces chiffres dans la section <strong>« Cumul annuel »</strong> de ton bulletin de paie le plus récent.
+              </div>
+              <Field label="Revenu brut cumulé YTD ($)">
+                <input type="number" value={ytdGrossInput} onChange={e => setYtdGrossInput(e.target.value)}
+                  placeholder="0.00" step="0.01" min="0" className={INPUT} />
+              </Field>
+              <Field label="Impôts retenus cumulés YTD ($)">
+                <input type="number" value={ytdTaxInput} onChange={e => setYtdTaxInput(e.target.value)}
+                  placeholder="0.00" step="0.01" min="0" className={INPUT} />
+              </Field>
+              <Field label="Heures travaillées (optionnel)">
+                <input type="number" value={ytdHoursInput} onChange={e => setYtdHoursInput(e.target.value)}
+                  placeholder="0" min="0" className={INPUT} />
+              </Field>
+            </>
+          )}
+
+          <button onClick={saveYtd} className={BTN}>✓ Enregistrer →</button>
+          {ytdData && (
+            <button onClick={() => { clearYtd(); setYtdModal(false) }}
+              className="text-[12px] text-[rgba(232,230,224,0.38)] hover:text-[#FF5C5C] cursor-pointer py-1 text-center transition-colors">
+              🗑 Supprimer les revenus importés
+            </button>
+          )}
+        </div>
+      </BottomSheet>
 
       {/* ═══════════════════════════════════════════════════════════════════
           MODAL: PROFIL

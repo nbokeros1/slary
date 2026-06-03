@@ -71,6 +71,19 @@ export interface EntryData {
   ts: number
 }
 
+export interface YtdData {
+  // Pour salariés / gig / étudiants
+  grossYtd: number
+  taxWithheldYtd: number
+  hoursYtd: number
+  // Pour autonomes
+  revenueYtd: number
+  instalmentsYtd: number
+  // Commun
+  period: string
+  ts: number
+}
+
 export interface CalcResult {
   fed: number
   prov: number
